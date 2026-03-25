@@ -35,7 +35,9 @@ def _build_url(config: dict[str, Any]) -> str:
     return f"{base_url}/api/current"
 
 
-async def fetch_current_payload(config: dict[str, Any]) -> dict[str, Any]:
+async def fetch_current_payload(
+    config: dict[str, Any], *, client: httpx.AsyncClient | None = None
+) -> dict[str, Any]:
     """获取 Live Dashboard 当前状态数据。
 
     返回值：
@@ -53,28 +55,34 @@ async def fetch_current_payload(config: dict[str, Any]) -> dict[str, Any]:
 
     # 记录请求关键参数，便于排查“地址错/超时短/鉴权未生效”等问题。
     logger.info(
-        "[视奸面板] 发起请求：url=%s, timeout=%ss, auth=%s",
+        "[视奸面板] 已发起请求，地址：%s, 超时：%s秒, 鉴权：%s",
         url,
         timeout_sec,
-        "on" if "Authorization" in headers else "off",
+        "开启" if "Authorization" in headers else "关闭",
     )
 
-    # 使用异步客户端发起 GET 请求；超时策略由 timeout_sec 控制。
-    async with httpx.AsyncClient(timeout=timeout_sec) as client:
-        response = await client.get(url, headers=headers)
+    # 支持注入长生命周期客户端；未注入时回退到临时客户端。
+    owns_client = client is None
+    request_client = client or httpx.AsyncClient(timeout=timeout_sec)
+
+    try:
+        response = await request_client.get(url, headers=headers)
 
         # 先记录状态码，再由 raise_for_status 统一抛出非 2xx 异常。
-        logger.info("[视奸面板] 收到响应：status=%s", response.status_code)
+        logger.info("[视奸面板] 收到响应，状态码：%s", response.status_code)
         response.raise_for_status()
 
         # 解析响应 JSON。
         data = response.json()
+    finally:
+        if owns_client:
+            await request_client.aclose()
 
     # 防御式校验：要求最外层必须是对象，便于后续按键访问。
     if not isinstance(data, dict):
-        logger.error("[视奸面板] 响应结构异常：payload 非 JSON object")
+        logger.error("[视奸面板] 响应结构异常：响应体不是 JSON 对象")
         raise ValueError("/api/current 响应不是 JSON 对象")
 
     # 仅在 DEBUG 下输出字段概览，避免 INFO 日志过载。
-    logger.debug("[视奸面板] 响应解析完成：keys=%s", list(data.keys()))
+    logger.debug("[视奸面板] 响应解析完成，字段列表：%s", list(data.keys()))
     return data
