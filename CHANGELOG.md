@@ -58,6 +58,9 @@
 - @DBJD-CR made their first contribution in #1
 - @openai-codex[bot] made their first contribution in #1
 - @roomote made their first contribution in #1
+- @gemini-code-assist[bot] made their first contribution in #1
+- @sourcery-ai[bot] made their first contribution in #1
+- @kilo-code-bot [bot] made their first contribution in #1
 
 ---
 

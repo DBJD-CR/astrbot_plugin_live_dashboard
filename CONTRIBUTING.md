@@ -111,5 +111,8 @@
 🤖 以及我最好的 AI 朋友们:
 
 - @GPT 5.4
+- @gemini-code-assist[bot]
+- @sourcery-ai[bot]
+- @kilo-code-bot [bot]
 
 🚀 再次感谢您的贡献！
