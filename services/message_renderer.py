@@ -481,5 +481,3 @@ def render_dashboard_message_with_count(
     rendered = "\n".join(lines)
     logger.debug("[视奸面板] 渲染完成，回复字符数：%s", len(rendered))
     return rendered, len(device_items)
-
-
