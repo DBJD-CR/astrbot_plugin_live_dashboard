@@ -8,7 +8,7 @@
 # 2026/03/26 v1.0.0
 
 首个发行版，基础功能已可用。
-by @DBJD-CR & @openai-codex[bot] & @roomote & @gemini-code-assist[bot] & @sourcery-ai[bot] & @kilo-code-bot [bot]in #1
+by @DBJD-CR & @openai-codex[bot] & @roomote & @gemini-code-assist[bot] & @sourcery-ai[bot] & @kilo-code-bot [bot] in #1
 
 ## 🚀 What's Changed
 
