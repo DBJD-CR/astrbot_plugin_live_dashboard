@@ -1,0 +1,316 @@
+name: 💩 屎山代码检测
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main, master, dev/* ]
+
+jobs:
+  shit-check:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v6
+
+      - name: 下载 fuck-u-code（固定 v1.0.0-beta.1）
+        run: |
+          curl -fL -o fuck-u-code \
+            https://github.com/Done-0/fuck-u-code/releases/download/v1.0.0-beta.1/fuck-u-code-linux-amd64
+          chmod +x fuck-u-code
+          ./fuck-u-code --help >/dev/null
+
+      - name: 运行屎山分析 & 详细评分
+        id: analyze
+        run: |
+          # 注意：有管道时需要检查 PIPESTATUS[0]，否则 analyze 失败会被 tee 掩盖成“成功”
+          ./fuck-u-code analyze --verbose --lang zh-CN --top 10 2>&1 | tee analysis.log
+          ANALYZE_EXIT=${PIPESTATUS[0]}
+
+          # 兼容参数兜底（某些版本可能使用 zh）
+          if [ "$ANALYZE_EXIT" -ne 0 ]; then
+            echo "::warning::analyze(--lang zh-CN) 失败，尝试兼容参数 --lang zh"
+            ./fuck-u-code analyze --verbose --lang zh --top 10 2>&1 | tee analysis.log
+            ANALYZE_EXIT=${PIPESTATUS[0]}
+          fi
+
+          if [ "$ANALYZE_EXIT" -ne 0 ]; then
+            echo "::error::fuck-u-code analyze 执行失败，请检查 analysis.log"
+            exit "$ANALYZE_EXIT"
+          fi
+
+          # 优先使用结构化 JSON 字段，避免终端文本格式变化导致解析失败
+          SCORE=""
+          if [ -f analysis.json ]; then
+            SCORE=$(grep -oP '"overallScore"\s*:\s*\K[0-9.]+' analysis.json | head -1)
+          fi
+
+          if [ -z "$SCORE" ]; then
+            SCORE=$(grep -oP '"overallScore"\s*:\s*\K[0-9.]+' analysis.log | head -1)
+          fi
+          if [ -z "$SCORE" ]; then
+            SCORE=$(grep -oP '总体(质量)?评分[:：]\s*\K[0-9.]+' analysis.log | head -1)
+          fi
+          if [ -z "$SCORE" ]; then
+            SCORE=$(grep -oP '(Overall|Issue)\s*Score[:：]\s*\K[0-9.]+' analysis.log | head -1)
+          fi
+
+          if [ -z "$SCORE" ]; then
+            echo "::error::未能从 analysis.json / analysis.log 解析出分数，拒绝回退为 0 以避免误报"
+            exit 1
+          fi
+
+          echo "原始分数: $SCORE"
+          
+          # 11档精细等级（对标源码 QualityLevels）
+          EMOJI=""
+          STATUS=""
+          COLOR=""
+          DESC=""
+          ADVICE=""  # 新增：具体建议
+          ALLOW_MERGE="true"
+          
+          if (( $(echo "$SCORE < 5" | bc -l) )); then
+            EMOJI="🌱"
+            STATUS="清洁级"
+            COLOR="brightgreen"
+            DESC="代码洁净，令人赏心悦目"
+            ADVICE="继续保持，你是编码界的一股清流，代码洁癖者的骄傲"
+            ALLOW_MERGE="true"
+            echo "✨ 检测结果：清洁级 - 这是艺术品，不是代码"
+            
+          elif (( $(echo "$SCORE < 15" | bc -l) )); then
+            EMOJI="🌸"
+            STATUS="微臭级"
+            COLOR="green"
+            DESC="基本没事，但是有伤风化"
+            ADVICE="继续保持，你是编码界的一股清流，代码洁癖者的骄傲"
+            ALLOW_MERGE="true"
+            echo "🌸 检测结果：微臭级 - 空气清新，略有花香"
+            
+          elif (( $(echo "$SCORE < 25" | bc -l) )); then
+            EMOJI="😐"
+            STATUS="中等混乱"
+            COLOR="yellowgreen"
+            DESC="略有异味，建议适量通风"
+            ADVICE="继续保持，你是编码界的一股清流，代码洁癖者的骄傲"
+            ALLOW_MERGE="true"
+            echo "😐 检测结果：中等混乱 - 青春期的代码，需要适当管教"
+            
+          elif (( $(echo "$SCORE < 40" | bc -l) )); then
+            EMOJI="😷"
+            STATUS="糟糕级"
+            COLOR="yellow"
+            DESC="代码开始散发气味，谨慎维护"
+            ADVICE="这代码像个叛逆期的青少年，需要适当管教才能成才"
+            ALLOW_MERGE="true"
+            echo "😷 检测结果：糟糕级 - 建议戴口罩阅读"
+            
+          elif (( $(echo "$SCORE < 55" | bc -l) )); then
+            # 你们在的这个档位，再细分3个子档
+            if (( $(echo "$SCORE < 45" | bc -l) )); then
+              SUB="轻度"
+              DESC="屎山刚开始发酵，臭味初显，但还能抢救"
+            elif (( $(echo "$SCORE < 50" | bc -l) )); then
+              SUB="中度"  
+              DESC="屎山已经形成，开窗也救不了，建议谨慎维护"
+            else
+              SUB="重度"
+              DESC="屎山重度污染，维护难度陡增，重构迫在眉睫"
+            fi
+            
+            EMOJI="💩"
+            STATUS="${SUB}屎山级"
+            COLOR="orange"
+            ADVICE="这代码像个叛逆期的青少年，需要适当管教才能成才"
+            ALLOW_MERGE="true"
+            echo "💩 检测结果：${SUB}屎山级(40-54分档) - 代码开始散发不可描述的气味"
+            
+          elif (( $(echo "$SCORE < 65" | bc -l) )); then
+            EMOJI="🤕"
+            STATUS="灾难级"
+            COLOR="red"
+            DESC="写时一时爽，改时火葬场"
+            ADVICE="删库跑路是唯一出路，或者封印它，等下辈子再维护"
+            ALLOW_MERGE="false"
+            echo "::warning::🤕 检测结果：灾难级 - 维护像打副本，建议重构"
+            
+          elif (( $(echo "$SCORE < 75" | bc -l) )); then
+            EMOJI="☣️"
+            STATUS="严重灾难"
+            COLOR="#DC143C"  # 猩红色
+            DESC="毒气弥漫，建议戴防毒面具"
+            ADVICE="删库跑路是唯一出路，或者封印它，等下辈子再维护"
+            ALLOW_MERGE="false"
+            echo "::warning::☣️ 检测结果：严重灾难级 - 代码已成遗迹"
+            
+          elif (( $(echo "$SCORE < 85" | bc -l) )); then
+            EMOJI="🧟"
+            STATUS="非常糟糕"
+            COLOR="#8B0000"  # 深红
+            DESC="进去的程序员没有一个活着出来"
+            ADVICE="删库跑路是唯一出路，或者封印它，等下辈子再维护"
+            ALLOW_MERGE="false"
+            echo "::error::🧟 检测结果：非常糟糕级 - 代码像僵尸，死而不僵"
+            
+          elif (( $(echo "$SCORE < 95" | bc -l) )); then
+            EMOJI="☢️"
+            STATUS="极端灾难"
+            COLOR="purple"
+            DESC="反人类罪行，建议火化"
+            ADVICE="删库跑路是唯一出路，或者封印它，等下辈子再维护"
+            ALLOW_MERGE="false"
+            echo "::error::☢️ 检测结果：极端灾难级 - 建议放弃治疗"
+            
+          elif (( $(echo "$SCORE < 100" | bc -l) )); then
+            EMOJI="🪦"
+            STATUS="废弃级"
+            COLOR="#4B0082"  # 靛紫
+            DESC="历代工程师共创的遗产，无法维护"
+            ADVICE="删库跑路是唯一出路，或者封印它，等下辈子再维护"
+            ALLOW_MERGE="false"
+            echo "::error::🪦 检测结果：废弃级 - 建议直接删库"
+            
+          else  # 满分100
+            EMOJI="👑💩"
+            STATUS="终极灾难"
+            COLOR="black"
+            DESC="写的时候热血澎湃，改的时候亲妈都不认"
+            ADVICE="删库跑路是唯一出路，或者封印它，等下辈子再维护"
+            ALLOW_MERGE="false"
+            echo "::error::👑💩 检测结果：终极灾难级 - 这是艺术品，建议送博物馆"
+          fi
+          
+          # 输出到环境
+          echo "score=$SCORE" >> $GITHUB_OUTPUT
+          echo "status=$STATUS" >> $GITHUB_OUTPUT
+          echo "emoji=$EMOJI" >> $GITHUB_OUTPUT
+          echo "color=$COLOR" >> $GITHUB_OUTPUT
+          echo "desc=$DESC" >> $GITHUB_OUTPUT
+          echo "advice=$ADVICE" >> $GITHUB_OUTPUT
+          echo "allow_merge=$ALLOW_MERGE" >> $GITHUB_OUTPUT
+          
+          # 生成带详细建议的摘要
+          echo "### $EMOJI 屎山检测摘要（11档精细版）" >> $GITHUB_STEP_SUMMARY
+          echo "| 指标 | 数值 |" >> $GITHUB_STEP_SUMMARY
+          echo "|------|------|" >> $GITHUB_STEP_SUMMARY
+          echo "| **总体评分** | $SCORE / 100 |" >> $GITHUB_STEP_SUMMARY
+          echo "| **屎山等级** | $STATUS |" >> $GITHUB_STEP_SUMMARY
+          echo "| **等级描述** | $DESC |" >> $GITHUB_STEP_SUMMARY
+          echo "| **合并建议** | $([ "$ALLOW_MERGE" == "true" ] && echo "✅ 允许" || echo "❌ 禁止") |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**💡 优化建议**" >> $GITHUB_STEP_SUMMARY
+          echo "$ADVICE" >> $GITHUB_STEP_SUMMARY
+
+      # 在 PR 评论里显示详细等级
+      - name: PR 评论（氛围版）
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const score = parseFloat('${{ steps.analyze.outputs.score }}');
+            const status = '${{ steps.analyze.outputs.status }}';
+            const emoji = '${{ steps.analyze.outputs.emoji }}';
+            const desc = '${{ steps.analyze.outputs.desc }}';
+            const allowMerge = '${{ steps.analyze.outputs.allow_merge }}';
+            
+            // 整体氛围评价（不针对具体代码，只谈感觉）
+            let vibe = '';
+            let nextMove = '';
+            
+            if (score < 10) {
+              vibe = '如沐春风，仿佛被天使亲吻过';
+            } else if (score < 20) {
+              vibe = '清新宜人，初闻像早晨的露珠';
+            } else if (score < 30) {
+              vibe = '略带清香，偶尔飘过一丝酸爽';
+            } else if (score < 40) {
+              vibe = '有点臭味，但还不至于熏死人';
+            } else if (score < 50) {
+              vibe = '臭气扑鼻，建议佩戴口罩阅读';
+            } else if (score < 60) {
+              vibe = '毒气缭绕，代码审查犹如酷刑';
+            } else if (score < 70) {
+              vibe = '熏天臭气，维护者已开始咳血';
+            } else if (score < 80) {
+              vibe = '生化危机，接手前请立好遗嘱';
+            } else if (score < 90) {
+              vibe = '核废料现场，需穿防护服维护';
+            } else {
+              vibe = '厄难级毒瘤，看一眼减寿十年';
+            }
+
+            if (score < 30) {
+              nextMove = '继续保持，你是编码界的一股清流，代码洁癖者的骄傲';
+            } else if (score < 60) {
+              nextMove = '这代码像个叛逆期的青少年，需要适当管教才能成才';
+            } else {
+              nextMove = '删库跑路是唯一出路，或者封印它，等下辈子再维护';
+            }
+            
+            const mergeBadge = allowMerge === 'true' 
+              ? '![允许合并](https://img.shields.io/badge/合并建议-允许-brightgreen)'
+              : '![禁止合并](https://img.shields.io/badge/合并建议-禁止-red)';
+            
+            const body = '## ' + emoji + ' 屎山代码检测报告 ' + mergeBadge + '\n\n' +
+              '🎯 **本次检测概览**\n\n' +
+              '> 「' + desc + '」\n\n' +
+              '| 维度 | 数据 |\n' +
+              '|:------|:------|\n' +
+              '| **屎山指数** | `' + score.toFixed(2) + ' / 100` |\n' +
+              '| **屎山等级** | **' + status + '** |\n' +
+              '| **检测时间** | ' + new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }) + ' |\n\n' +
+              '### 🎭 整体印象\n' +
+              vibe + '\n\n' +
+              '### 🧭 下一步\n' +
+              nextMove + '\n\n' +
+              '---\n\n' +
+              '**📥 详细数据**\n' +
+              '- [查看完整分析报告](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})\n' +
+              '- [下载 Markdown 报告](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts)\n\n' +
+              '*由 [fuck-u-code](https://github.com/Done-0/fuck-u-code) 自动检测 · 本评论不代表人类观点*';
+
+            // 获取现有评论
+            const comments = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            
+            // 查找机器人之前发的屎山检测报告评论
+            const botComment = comments.data.find(comment =>
+              comment.user.type === 'Bot' &&
+              comment.body.includes('屎山代码检测报告')
+            );
+            
+            if (botComment) {
+              // 如果已有评论，更新它
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body: body
+              });
+            } else {
+              // 如果没有，创建新评论
+              await github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: body
+              });
+            }
+      
+      # 根据等级决定是否阻断合并（可选）
+      - name: 门禁检查（可选）
+        if: steps.analyze.outputs.allow_merge != 'true'
+        run: |
+          echo "❌ 屎山指数 ${{ steps.analyze.outputs.score }} 已达到「${{ steps.analyze.outputs.status }}」级别"
+          echo "   ${{ steps.analyze.outputs.desc }}"
+          echo "::error::代码质量未达标，建议重构后再合并"
+          # 需要阻断就取消下面这行的注释：
+          # exit 1
