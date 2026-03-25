@@ -7,7 +7,8 @@
 
 # 2026/03/26 v1.0.0
 
-首个发行版，基础功能已可用。 by @DBJD-CR @openai-codex[bot] @roomote in #1
+首个发行版，基础功能已可用。
+by @DBJD-CR & @openai-codex[bot] & @roomote & @gemini-code-assist[bot] & @sourcery-ai[bot] & @kilo-code-bot [bot]in #1
 
 ## 🚀 What's Changed
 
@@ -36,6 +37,7 @@
 - 修复插件扫描/加载兼容性问题，确保 AstrBot 启动后可识别。
 - 修复全量文本与引用回复一起发出的问题。
 - 修复应用黑白名单时设备数计算错误的问题。
+- 修复一些 AI 审核从鸡蛋里挑的骨头 by @DBJD-CR in #2
 
 ### 📚 Documentation (文档)
 
