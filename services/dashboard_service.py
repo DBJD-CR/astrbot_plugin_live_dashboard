@@ -10,7 +10,7 @@ from astrbot.api import logger
 from ..utils.config_parser import get_int_value
 
 # 渲染层：把结构化数据转成可直接回复的文本。
-from .message_renderer import get_render_device_count, render_dashboard_message
+from .message_renderer import render_dashboard_message_with_count
 
 # 请求层：负责向 Live Dashboard 拉取原始状态数据。
 from .payload_client import fetch_current_payload
@@ -56,9 +56,11 @@ class DashboardService:
             )
             logger.debug("[视奸面板] 上游请求成功，设备数：%s", device_count)
 
-            # 把上游数据按配置开关渲染成最终回复文本。
-            rendered_message = render_dashboard_message(payload, self.config)
-            render_device_count = get_render_device_count(payload, self.config)
+            # 把上游数据按配置开关渲染成最终回复文本，并返回展示设备数。
+            rendered_message, render_device_count = render_dashboard_message_with_count(
+                payload,
+                self.config,
+            )
 
             # 记录最终输出长度，方便定位“回复过长/过短”的问题。
             logger.info(

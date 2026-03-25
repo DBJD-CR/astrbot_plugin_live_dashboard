@@ -251,16 +251,12 @@ def _mask_sensitive_text(text: str, keywords: list[str], replacement: str) -> st
     return text
 
 
-def _apply_device_keyword_filters(
-    device_items: list[dict[str, Any]], config: dict[str, Any]
+def _apply_device_keyword_filters_with_keywords(
+    device_items: list[dict[str, Any]],
+    whitelist_keywords: list[str],
+    blacklist_keywords: list[str],
 ) -> list[dict[str, Any]]:
-    """按配置对白名单/黑名单关键词进行设备筛选。"""
-    whitelist_raw = get_text_value(config, "device_whitelist_keywords", "")
-    blacklist_raw = get_text_value(config, "device_blacklist_keywords", "")
-
-    whitelist_keywords = _parse_keyword_list(whitelist_raw)
-    blacklist_keywords = _parse_keyword_list(blacklist_raw)
-
+    """按已解析关键词对白名单/黑名单进行设备筛选。"""
     filtered_items = device_items
 
     # 白名单：仅保留命中关键词的设备。
@@ -290,31 +286,39 @@ def _apply_device_keyword_filters(
     return filtered_items
 
 
-def _pick_device_items(
+def _select_devices_for_render(
     payload_data: dict[str, Any], config: dict[str, Any]
-) -> list[dict[str, Any]]:
-    """从 payload 中挑选用于展示的设备列表。"""
-    device_items_raw = payload_data.get("devices", [])
-    # devices 字段异常时返回空列表，避免后续遍历报错。
-    if not isinstance(device_items_raw, list):
-        return []
+) -> tuple[list[dict[str, Any]], int, int]:
+    """统一产出渲染所需设备列表与在线/总数统计。"""
+    all_devices_raw = payload_data.get("devices", [])
+    all_devices = (
+        [item for item in all_devices_raw if isinstance(item, dict)]
+        if isinstance(all_devices_raw, list)
+        else []
+    )
 
-    # 是否包含离线设备。
+    whitelist_keywords = _parse_keyword_list(
+        get_text_value(config, "device_whitelist_keywords", "")
+    )
+    blacklist_keywords = _parse_keyword_list(
+        get_text_value(config, "device_blacklist_keywords", "")
+    )
+
+    counted_devices = _apply_device_keyword_filters_with_keywords(
+        all_devices,
+        whitelist_keywords,
+        blacklist_keywords,
+    )
+    total_count = len(counted_devices)
+    online_count = sum(1 for item in counted_devices if _is_online(item))
+
     include_offline_devices = get_bool_value(config, "include_offline_devices", False)
-    # 最大展示设备数量，做上下限保护。
     max_devices = get_int_value(config, "max_devices", 10, min_value=1, max_value=100)
 
-    # 仅保留 dict 项，过滤掉异常元素。
-    device_items = [item for item in device_items_raw if isinstance(item, dict)]
-
-    # 关键词黑白名单筛选。
-    device_items = _apply_device_keyword_filters(device_items, config)
-
-    # 默认只显示在线设备，减少消息噪音。
+    device_items = counted_devices
     if not include_offline_devices:
         device_items = [item for item in device_items if _is_online(item)]
 
-    # 排序规则：在线优先，其次按设备名排序，保证输出稳定。
     device_items.sort(
         key=lambda item: (
             0 if _is_online(item) else 1,
@@ -322,34 +326,17 @@ def _pick_device_items(
         )
     )
 
-    # 按 max_devices 截断，防止一次输出过长。
-    return device_items[:max_devices]
+    return device_items[:max_devices], online_count, total_count
 
 
-def get_render_device_count(
+def render_dashboard_message_with_count(
     payload_data: dict[str, Any], config: dict[str, Any]
-) -> int:
-    """获取最终将展示的设备数量（与渲染筛选逻辑一致）。"""
-    return len(_pick_device_items(payload_data, config))
-
-
-def render_dashboard_message(
-    payload_data: dict[str, Any], config: dict[str, Any]
-) -> str:
-    """将 /api/current 返回数据渲染为更接近上游前端风格的回复文本。"""
-    all_devices_raw = payload_data.get("devices", [])
-    # 防御式转换：确保 all_devices 是 dict 列表。
-    all_devices = (
-        [item for item in all_devices_raw if isinstance(item, dict)]
-        if isinstance(all_devices_raw, list)
-        else []
+) -> tuple[str, int]:
+    """渲染文本并返回展示设备数，避免调用方重复计算。"""
+    device_items, online_count, total_count = _select_devices_for_render(
+        payload_data,
+        config,
     )
-
-    # 头部统计口径：先应用关键词黑白名单，再统计在线/总数。
-    # 这样“在线设备 x/y”会和过滤结果一致。
-    counted_devices = _apply_device_keyword_filters(all_devices, config)
-    total_count = len(counted_devices)
-    online_count = sum(1 for item in counted_devices if _is_online(item))
 
     # 读取所有显示开关（由 _conf_schema.json 定义）。
     show_platform = get_bool_value(config, "show_platform", True)
@@ -360,7 +347,6 @@ def render_dashboard_message(
     show_last_seen = get_bool_value(config, "show_last_seen", True)
     show_viewer_count = get_bool_value(config, "show_viewer_count", False)
     show_server_time = get_bool_value(config, "show_server_time", False)
-
     info_blacklist_keywords = _parse_keyword_list(
         get_text_value(config, "info_blacklist_keywords", "")
     )
@@ -398,15 +384,13 @@ def render_dashboard_message(
         if isinstance(server_time, str) and server_time.strip():
             lines.append(f"服务端时间：{format_time_text(server_time)}")
 
-    # 挑选实际展示设备列表。
-    device_items = _pick_device_items(payload_data, config)
     logger.debug("[视奸面板] 正在渲染设备列表...选中设备数：%s", len(device_items))
 
     # 没有可展示设备时返回简短提示。
     if not device_items:
         lines.append("")
         lines.append("暂无符合条件的设备状态喵。")
-        return "\n".join(lines)
+        return "\n".join(lines), 0
 
     # 设备区块与头部之间插入空行，提升可读性。
     lines.append("")
@@ -432,13 +416,18 @@ def render_dashboard_message(
             head_text += f" ({platform_text})"
         lines.append(head_text)
 
-        # 主叙事句：现在正在…
+        # 主叙事句：现在正在…（同样应用信息黑名单脱敏策略）。
         if status_online:
             activity_text = _build_activity_description(
                 app_name_raw, display_title_raw, extra_data
             )
         else:
             activity_text = "离线休息中喵~"
+        activity_text = _mask_sensitive_text(
+            activity_text,
+            info_blacklist_keywords,
+            info_blacklist_replacement,
+        )
         lines.append(f"  现在：{activity_text}")
 
         # 应用名（可选）：命中信息黑名单关键词时替换为统一文案。
@@ -491,4 +480,4 @@ def render_dashboard_message(
     # 合并文本并记录长度（DEBUG）。
     rendered = "\n".join(lines)
     logger.debug("[视奸面板] 渲染完成，回复字符数：%s", len(rendered))
-    return rendered
+    return rendered, len(device_items)

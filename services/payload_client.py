@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Any
+from urllib.parse import urlsplit
 
 import httpx
 
@@ -35,6 +36,14 @@ def _build_url(config: dict[str, Any]) -> str:
     return f"{base_url}/api/current"
 
 
+def _mask_url_for_log(url: str) -> str:
+    """仅保留 host/path 用于日志，避免记录 query/fragment 等敏感信息。"""
+    parsed = urlsplit(url)
+    host = parsed.netloc or "(invalid-host)"
+    path = parsed.path or "/"
+    return f"{host}{path}"
+
+
 async def fetch_current_payload(
     config: dict[str, Any], *, client: httpx.AsyncClient | None = None
 ) -> dict[str, Any]:
@@ -53,17 +62,19 @@ async def fetch_current_payload(
     # 根据配置构建请求头（含可选鉴权）。
     headers = _build_headers(config)
 
-    # 记录请求关键参数，便于排查“地址错/超时短/鉴权未生效”等问题。
-    logger.info(
-        "[视奸面板] 已发起请求，地址：%s, 超时：%s秒, 鉴权：%s",
-        url,
-        timeout_sec,
-        "开启" if "Authorization" in headers else "关闭",
-    )
-
     # 支持注入长生命周期客户端；未注入时回退到临时客户端。
     owns_client = client is None
     request_client = client or httpx.AsyncClient(timeout=timeout_sec)
+
+    # 记录请求关键参数，便于排查“地址错/超时短/鉴权未生效”等问题。
+    # 传入外部 client 时，实际超时由外部 client 控制，避免日志误导。
+    timeout_log_text = f"{timeout_sec}秒" if owns_client else "外部client配置"
+    logger.info(
+        "[视奸面板] 已发起请求，地址：%s, 超时：%s, 鉴权：%s",
+        _mask_url_for_log(url),
+        timeout_log_text,
+        "开启" if "Authorization" in headers else "关闭",
+    )
 
     try:
         response = await request_client.get(url, headers=headers)

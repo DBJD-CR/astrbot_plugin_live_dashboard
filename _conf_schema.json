@@ -54,7 +54,7 @@
     "hint": "支持逗号/分号/换行分隔；命中后不响应该用户查询。"
   },
   "info_blacklist_keywords": {
-    "description": "信息黑名单关键词（应用名/标题命中即替换）",
+    "description": "信息黑名单关键词（现在/应用/标题命中即替换）",
     "type": "string",
     "default": "",
     "hint": "支持逗号/分号/换行分隔；用于隐藏个人姓名、私密应用等敏感词。"
@@ -63,7 +63,7 @@
     "description": "信息黑名单替换文案",
     "type": "string",
     "default": "不想让你看到我在干什么喵~",
-    "hint": "当应用名或标题命中信息黑名单关键词时，用该文案替换。"
+    "hint": "当现在叙事、应用名或标题命中信息黑名单关键词时，用该文案替换。"
   },
   "show_platform": {
     "description": "显示设备平台（windows/macos/android）",
