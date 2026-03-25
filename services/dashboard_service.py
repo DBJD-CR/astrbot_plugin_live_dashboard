@@ -23,7 +23,7 @@ class DashboardService:
         """保存插件配置，供后续请求和渲染阶段使用。"""
         self.config = config
         timeout_sec = get_int_value(
-            config, "request_timeout_sec", 8, min_value=1, max_value=60
+            config, "request_timeout_sec", 30, min_value=1, max_value=60
         )
         self._http_client = httpx.AsyncClient(timeout=timeout_sec)
 

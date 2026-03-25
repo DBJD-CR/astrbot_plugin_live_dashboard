@@ -46,7 +46,7 @@ async def fetch_current_payload(
     """
     # 读取超时配置，并限制在 1~60 秒之间，避免异常配置。
     timeout_sec = get_int_value(
-        config, "request_timeout_sec", 8, min_value=1, max_value=60
+        config, "request_timeout_sec", 30, min_value=1, max_value=60
     )
     # 根据配置构建目标 URL。
     url = _build_url(config)
