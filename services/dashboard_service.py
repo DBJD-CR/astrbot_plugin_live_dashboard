@@ -7,6 +7,8 @@ import httpx
 # AstrBot 统一日志对象。
 from astrbot.api import logger
 
+from ..utils.config_parser import get_int_value
+
 # 渲染层：把结构化数据转成可直接回复的文本。
 from .message_renderer import get_render_device_count, render_dashboard_message
 
@@ -20,14 +22,15 @@ class DashboardService:
     def __init__(self, config: dict[str, Any]):
         """保存插件配置，供后续请求和渲染阶段使用。"""
         self.config = config
+        timeout_sec = get_int_value(
+            config, "request_timeout_sec", 8, min_value=1, max_value=60
+        )
+        self._http_client = httpx.AsyncClient(timeout=timeout_sec)
 
     async def close(self) -> None:
-        """释放服务层资源。
-
-        当前实现未持有长生命周期网络连接或后台任务，
-        保留该接口用于生命周期统一收敛与后续扩展。
-        """
-        logger.info("[视奸面板] DashboardService 资源清理完成")
+        """释放服务层资源。"""
+        await self._http_client.aclose()
+        logger.info("[视奸面板] HTTP 客户端已关闭")
 
     async def query_and_render(self) -> tuple[str, int]:
         """拉取实时状态并输出可发送文本与设备数量。"""
@@ -35,7 +38,7 @@ class DashboardService:
         base_url = str(self.config.get("base_url", "")).strip()
         # 地址未配置时直接返回可读提示，避免继续请求导致无意义异常。
         if not base_url:
-            logger.warning("[视奸面板] 配置缺失：base_url 未填写")
+            logger.warning("[视奸面板] 配置缺失：服务地址未填写")
             return "未配置 Live Dashboard 地址，请在插件配置中填写 base_url。", 0
 
         try:
@@ -43,7 +46,7 @@ class DashboardService:
             logger.debug("[视奸面板] 开始请求上游状态接口")
 
             # 从上游拉取当前状态 payload（dict）。
-            payload = await fetch_current_payload(self.config)
+            payload = await fetch_current_payload(self.config, client=self._http_client)
 
             # 仅用于调试观察：统计上游返回的设备数量。
             device_count = (
@@ -51,7 +54,7 @@ class DashboardService:
                 if isinstance(payload.get("devices"), list)
                 else 0
             )
-            logger.debug("[视奸面板] 上游请求成功，devices=%s", device_count)
+            logger.debug("[视奸面板] 上游请求成功，设备数：%s", device_count)
 
             # 把上游数据按配置开关渲染成最终回复文本。
             rendered_message = render_dashboard_message(payload, self.config)
@@ -59,7 +62,7 @@ class DashboardService:
 
             # 记录最终输出长度，方便定位“回复过长/过短”的问题。
             logger.info(
-                "[视奸面板] 文本渲染完成，reply_chars=%s, render_devices=%s",
+                "[视奸面板] 文本渲染完成，回复字符数：%s, 展示设备数：%s",
                 len(rendered_message),
                 render_device_count,
             )
@@ -73,7 +76,7 @@ class DashboardService:
         except httpx.HTTPStatusError as exc:
             # HTTP 层已连通，但返回非 2xx 状态。
             status_code = exc.response.status_code
-            logger.warning("[视奸面板] HTTP 状态异常：status=%s", status_code)
+            logger.warning("[视奸面板] HTTP 状态异常，状态码：%s", status_code)
 
             # 401/403 常见于代理鉴权或 token 配置问题。
             if status_code in (401, 403):
